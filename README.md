@@ -9,6 +9,7 @@ Before you begin, ensure you have the following installed:
 - Node.js and npm (for frontend dependencies)
 - ComfyUI (for AI image generation)
 - Git
+- Google Maps API key (for Street View and mapping features)
 
 ## Installation
 
@@ -49,6 +50,24 @@ FIREBASE_STORAGE_BUCKET=your_storage_bucket
    - Create a Firebase project at [Firebase Console](https://console.firebase.google.com/)
    - Download your `serviceAccountKey.json` and place it in the project root
    - Update the Firebase configuration in `app.py` with your project details
+
+6. Configure Google Maps API:
+   - Create a Google Maps API key from the [Google Cloud Console](https://console.cloud.google.com/)
+   - Enable the following APIs:
+     - Maps JavaScript API
+     - Street View API
+     - Places API
+     - Geocoding API
+   - Copy `config.template.js` to `config.js`:
+     ```bash
+     # Windows
+     copy config.template.js config.js
+
+     # macOS/Linux
+     cp config.template.js config.js
+     ```
+   - Edit `config.js` and replace `YOUR_GOOGLE_MAPS_API_KEY_HERE` with your actual API key
+   - Add appropriate restrictions to your API key (e.g., HTTP referrers, IP addresses)
 
 ### Complete Installation Steps
 
@@ -146,6 +165,24 @@ co-design-canvas/
 ```
 
 ## Configuration
+
+### Google Maps API Settings
+1. Create a `config.js` file from the template:
+```bash
+cp config.template.js config.js
+```
+
+2. Update the Google Maps API key in `config.js`:
+```javascript
+const config = {
+    googleMapsApiKey: 'your_google_maps_api_key_here'
+};
+```
+
+3. Add appropriate restrictions to your API key in the Google Cloud Console:
+   - HTTP referrers (your domain)
+   - IP addresses (if applicable)
+   - API restrictions (Maps JavaScript API, Street View API, Places API, Geocoding API)
 
 ### ComfyUI Settings
 Update the following paths in `app.py` to match your ComfyUI installation:
