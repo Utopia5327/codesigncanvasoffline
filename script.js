@@ -3569,7 +3569,7 @@ async function loadStreetViewImage(position, panoramaId = null, heading = null) 
         const pitch = 0;
         
         // Use panorama ID to ensure consistent view across clients
-        const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=${width}x${height}&pano=${finalPanoramaId}&heading=${finalHeading}&pitch=${pitch}&fov=${fov}&key=AIzaSyCUcYsGhKFTDsYu64sb4P4JOOCoxEbHhy4`;
+        const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=${width}x${height}&pano=${finalPanoramaId}&heading=${finalHeading}&pitch=${pitch}&fov=${fov}&key=${config.googleMapsApiKey}`;
         
         console.log('Street View image URL:', streetViewUrl);
         
