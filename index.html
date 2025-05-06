@@ -1,0 +1,2715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Co-Design Canvas</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="text-standardization.css">
+    <script src="config.js"></script>
+    <link href='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css' rel='stylesheet' />
+    <script src='https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js'></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+    
+    <!-- Define initMap before loading Google Maps -->
+    <script>
+        // Define initMap globally before loading the API
+        window.initMap = function() {
+            console.log('Initializing map...');
+            
+            // Check if the map element is visible
+            const mapElement = document.getElementById('map');
+            const isVisible = mapElement && mapElement.offsetParent !== null;
+            
+            if (!isVisible) {
+                console.log('Map container is not visible, deferring initialization...');
+                // Store that initialization was attempted but not completed
+                window.mapInitialized = false;
+                return;
+            }
+            
+            // Initialize the map
+            const mapOptions = {
+                center: { lat: 40.7128, lng: -74.0060 },  // New York City coordinates
+                zoom: 12,
+                styles: window.mapStyles || []
+            };
+            
+            try {
+                // Create the map and explicitly assign it to window.map
+                window.map = new google.maps.Map(document.getElementById('map'), mapOptions);
+                map = window.map; // Also assign to local variable for compatibility
+                
+                console.log('Map created:', window.map);
+                
+                // Flag that map is initialized
+                window.mapInitialized = true;
+                
+                // Initialize geocoder
+                window.geocoder = new google.maps.Geocoder();
+                geocoder = window.geocoder;
+                
+                // Initialize StreetViewService
+                streetViewService = new google.maps.StreetViewService();
+                
+                // Initialize search box
+                const input = document.getElementById('addressInput');
+                if (input) {
+                    const autocomplete = new google.maps.places.PlaceAutocompleteElement(input, {
+                        componentRestrictions: { country: 'us' },
+                        fields: ['place_id', 'geometry', 'name', 'formatted_address']
+                    });
+
+                    // Set up listener for place selection
+                    autocomplete.addListener('place_changed', () => {
+                        const place = autocomplete.getPlace();
+                        if (!place.geometry) {
+                            console.warn('No details available for input: ' + place.name);
+                            return;
+                        }
+
+                        // If the place has a geometry, then present it on the map
+                        if (place.geometry.viewport) {
+                            map.fitBounds(place.geometry.viewport);
+                        } else {
+                            map.setCenter(place.geometry.location);
+                            map.setZoom(17);
+                        }
+
+                        // Add a marker for the selected place
+                        if (marker) {
+                            marker.setMap(null);
+                        }
+                        marker = new google.maps.Marker({
+                            map: map,
+                            position: place.geometry.location
+                        });
+                    });
+                }
+            } catch (error) {
+                console.error('Error initializing map:', error);
+                window.mapInitialized = false;
+            }
+        };
+    </script>
+    
+    <!-- Load Google Maps after initMap is defined -->
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCUcYsGhKFTDsYu64sb4P4JOOCoxEbHhy4&libraries=places,geometry,visualization&callback=initMap"></script>
+    <style>
+        /* Main layout structure - single source of truth */
+        .bento-container {
+            display: grid;
+            grid-template-columns: 300px 1fr 300px;
+            grid-template-rows: auto 1fr;
+            grid-template-areas: 
+                "header header header"
+                "controls main prompts";
+            gap: 15px;
+            padding: 15px;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+            background-color: #f0f0f0;
+        }
+        
+        .bento-header {
+            grid-area: header;
+            width: 100%;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .header-text {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .header-logo {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+        }
+        
+        h1.app-title {
+            color: #333;
+            margin: 0;
+            font-size: 24px;
+            line-height: 1.2;
+            text-align: left;
+        }
+        
+        .app-subtitle {
+            color: #666;
+            font-size: 14px;
+            margin: 0;
+            font-weight: 400;
+            line-height: 1.2;
+            text-align: left;
+        }
+        
+        .header-buttons {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-left: 6px;
+            background-color: var(--accent-primary);
+        }
+
+        /* User-specific colors matching their brush colors */
+        .status-dot.user-1 { background-color: #4CAF50; } /* Current user's color - green */
+        .status-dot.user-2 { background-color: #FF6B6B; } /* Red */
+        .status-dot.user-3 { background-color: #45B7D1; } /* Blue */
+        .status-dot.user-4 { background-color: #FFD93D; } /* Yellow */
+        .status-dot.user-5 { background-color: #9C27B0; } /* Purple */
+
+        .header-button {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .header-button {
+            padding: 8px 16px;
+            background-color: #f5f5f5;
+            color: #555;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+
+        .header-button:hover {
+            background-color: #e0e0e0;
+        }
+        
+        .help-button {
+            background-color: #f5f5f5;
+            color: #555;
+            border: 1px solid #e0e0e0;
+        }
+
+        .help-button:hover {
+            background-color: #e0e0e0;
+        }
+
+        #locationModal .modal-content {
+            width: 90%;
+            max-width: 800px;
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            position: relative;
+            margin: 5% auto;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+        }
+        
+        #locationModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            overflow: auto;
+        }
+        
+        #streetViewSection {
+            margin-top: 15px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+            display: block;
+            width: 100%;
+        }
+        
+        #streetViewSection.hidden {
+            display: none;
+        }
+        
+        .location-input {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+            width: 100%;
+        }
+        
+        .location-input input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            color: #555;
+        }
+        
+        #searchLocation {
+            background-color: var(--accent-primary);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: var(--bento-radius);
+            cursor: pointer;
+            font-size: var(--font-size-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s ease;
+        }
+        
+        #searchLocation:hover {
+            background-color: var(--accent-secondary);
+            transform: translateY(-2px);
+            box-shadow: var(--glow-blue);
+        }
+        
+        #map {
+            width: 100%;
+            height: 250px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            background-color: #f0f0f0;
+        }
+        
+        .map-instructions {
+            color: #888;
+            font-size: 13px;
+            text-align: center;
+            font-style: italic;
+            margin-top: 10px;
+        }
+        
+        .hidden {
+            display: none !important;
+        }
+        
+        #streetViewContainer {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            opacity: 0;
+        }
+        
+        #streetViewPano {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Sources tab specific styling */
+        #toolbox-tab, #location-tab {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            padding: 15px;
+        }
+        
+        /* Tab Content Styles */
+        .tab-content {
+            padding: 0;
+            height: calc(100% - 50px);
+            overflow-y: auto;
+        }
+        
+        .tab-pane {
+            display: none;
+            height: 100%;
+        }
+        
+        .tab-pane.active {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .pac-container {
+            z-index: 9999;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        
+        .pac-item {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+        
+        .pac-item:hover {
+            background-color: #f5f5f5;
+        }
+        
+        .pac-item-query {
+            font-size: 14px;
+        }
+
+        #imageSelectionModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            z-index: 2000;
+        }
+
+        #imageSelectionModal .modal-content {
+            position: relative;
+            width: 80%;
+            max-width: 800px;
+            max-height: 80vh;
+            overflow-y: auto;
+            padding: 30px;
+            border-radius: var(--bento-radius);
+            background-color: var(--bg-primary);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--shadow-lg);
+            margin: 5% auto;
+        }
+
+        .modal-description {
+            margin: 15px 0 25px 0;
+            color: var(--text-secondary);
+            font-size: var(--font-size-md);
+            line-height: 1.5;
+            text-align: center;
+        }
+
+        .image-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .image-item {
+            position: relative;
+            cursor: pointer;
+            border-radius: var(--bento-radius);
+            overflow: hidden;
+            background: var(--bg-secondary);
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .image-item:hover, .image-item.selected {
+            border-color: var(--accent-primary);
+            transform: translateY(-5px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .image-container {
+            position: relative;
+            width: 100%;
+            height: 0;
+            padding-bottom: 75%; /* 4:3 aspect ratio */
+            overflow: hidden;
+        }
+
+        .image-container img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.3s ease;
+        }
+
+        .image-item:hover .image-container img {
+            transform: scale(1.05);
+        }
+
+        .image-label {
+            padding: 10px;
+            text-align: center;
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+            font-size: var(--font-size-sm);
+            font-weight: 500;
+        }
+
+        .close-modal {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            font-size: 24px;
+            color: var(--text-primary);
+            background: none;
+            border: none;
+            cursor: pointer;
+            transition: color 0.2s ease;
+        }
+
+        .close-modal:hover {
+            color: var(--accent-primary);
+        }
+
+        /* Add separation between tools and modifiers in the toolbox tab */
+        .modifiers-section {
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid var(--glass-border);
+        }
+
+        /* Updated Location Options Styling */
+        .location-options {
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        .option-section {
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            border-radius: var(--bento-radius);
+            padding: 20px;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .option-section:hover {
+            box-shadow: var(--shadow-lg);
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+
+        .option-title {
+            font-size: var(--font-size-md);
+            font-weight: 600;
+            color: var(--accent-primary);
+            margin-bottom: 15px;
+            border-bottom: none;
+            padding-bottom: 0;
+            background: transparent;
+            padding: 0;
+            border-radius: 0;
+            width: auto;
+            display: inline-block;
+        }
+
+        .option-description-tooltip {
+            display: none;
+            position: absolute;
+            top: -5px;
+            right: 0;
+            transform: translateY(-100%);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: var(--font-size-xs);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--glass-border);
+            width: max-content;
+            max-width: 250px;
+            text-align: left;
+            z-index: 1000;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .option-description-tooltip::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            right: 15px;
+            transform: rotate(45deg);
+            width: 10px;
+            height: 10px;
+            background: var(--bg-primary);
+            border-right: 1px solid var(--glass-border);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .option-title {
+            position: relative;
+            display: inline-block;
+            margin-right: 25px;
+        }
+
+        .option-title:hover + .option-description-tooltip {
+            display: block;
+            animation: fadeIn 0.3s forwards;
+        }
+
+        .tool-tooltip {
+            display: none;
+            position: absolute;
+            top: -45px; /* Increased distance from button */
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: var(--font-size-xs);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--glass-border);
+            width: max-content;
+            max-width: 200px;
+            text-align: center;
+            z-index: 1000; /* Increased z-index to ensure visibility */
+            white-space: normal;
+            pointer-events: none; /* Prevents tooltip from interfering with clicks */
+        }
+
+        .tool-tooltip::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 10px;
+            height: 10px;
+            background: var(--bg-primary);
+            border-right: 1px solid var(--glass-border);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        /* Special styles for toolbox buttons */
+        #brush-tools .btn .tool-tooltip {
+            top: -50px; /* Even more distance for toolbox buttons */
+        }
+
+        .btn {
+            position: relative;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Override for tooltips with horizontal centering */
+        .btn:hover .tool-tooltip {
+            display: block;
+            animation: fadeInCentered 0.3s forwards;
+        }
+
+        @keyframes fadeInCentered {
+            from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        .option-btn {
+            background-color: var(--accent-primary);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: var(--bento-radius);
+            cursor: pointer;
+            font-size: var(--font-size-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+            width: 100%;
+            box-shadow: var(--shadow-sm);
+        }
+
+        .option-btn:hover {
+            background-color: var(--accent-secondary);
+            transform: translateY(-2px);
+            box-shadow: var(--glow-blue);
+        }
+
+        .option-divider {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            color: var(--text-secondary);
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .option-divider::before,
+        .option-divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .option-divider::before {
+            margin-right: 15px;
+        }
+
+        .option-divider::after {
+            margin-left: 15px;
+        }
+
+        #streetViewSection {
+            margin: 0;
+            padding: 0;
+            background: transparent;
+            border: none;
+        }
+
+        .location-input {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        #map {
+            border-radius: var(--bento-radius);
+            border: 1px solid var(--glass-border);
+        }
+
+        /* Remove black background from option titles */
+        #location-tab .option-title {
+            background-color: transparent !important;
+            background: none !important;
+            color: var(--accent-primary) !important;
+            padding: 0 !important;
+            margin-bottom: 15px !important;
+            font-size: var(--font-size-md) !important;
+            font-weight: 600 !important;
+            display: block !important;
+            width: auto !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Add styling for slider tooltips */
+        .slider-tooltip {
+            display: none;
+            position: absolute;
+            top: -45px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: var(--font-size-xs);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--glass-border);
+            width: max-content;
+            max-width: 250px;
+            text-align: center;
+            z-index: 1000;
+            pointer-events: none;
+        }
+
+        .slider-tooltip::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%) rotate(45deg);
+            width: 10px;
+            height: 10px;
+            background: var(--bg-primary);
+            border-right: 1px solid var(--glass-border);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .slider-group {
+            position: relative;
+        }
+
+        .slider-group:hover .slider-tooltip {
+            display: block;
+            animation: fadeInCentered 0.3s forwards;
+        }
+
+        /* Updated styling for slider groups */
+        .slider-group {
+            background: var(--bg-secondary);
+            border: 1px solid var(--glass-border);
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 15px;
+            width: 100%;
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s ease;
+        }
+
+        .slider-group:hover {
+            box-shadow: var(--shadow-lg);
+            border-color: var(--accent-primary);
+            transform: translateY(-2px);
+        }
+
+        .slider-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        /* Styling for prompt sticky notes */
+        .prompt-section {
+            position: relative;
+            padding: 12px 15px;
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+            margin-bottom: 15px;
+            border-left: 3px solid var(--accent-primary);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+            transition: all 0.2s ease;
+        }
+        
+        .prompt-section:nth-child(1) {
+            border-left-color: #4f9cf9; /* Blue for What */
+        }
+        
+        .prompt-section:nth-child(2) {
+            border-left-color: #4ad991; /* Green for Where */
+        }
+        
+        .prompt-section:nth-child(3) {
+            border-left-color: #f97250; /* Orange for Avoid */
+        }
+        
+        .prompt-section:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .prompt-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            position: relative;
+        }
+        
+        .prompt-header label {
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        
+        .prompt-section textarea {
+            width: 100%;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 14px;
+            resize: none;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 70px;
+            transition: all 0.2s ease;
+        }
+        
+        .prompt-section textarea:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 2px rgba(79, 156, 249, 0.1);
+        }
+        
+        /* Example text styling */
+        .prompt-section textarea[data-example]:not(:focus):only-of-type:placeholder-shown {
+            color: var(--text-secondary);
+            font-style: italic;
+        }
+
+        /* Tooltip styling */
+        .prompt-tooltip {
+            display: none;
+            position: absolute;
+            top: -5px;
+            right: 0;
+            transform: translateY(-100%);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: var(--font-size-xs);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--glass-border);
+            width: max-content;
+            max-width: 250px;
+            text-align: left;
+            z-index: 1000;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .prompt-tooltip::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            right: 15px;
+            transform: rotate(45deg);
+            width: 10px;
+            height: 10px;
+            background: var(--bg-primary);
+            border-right: 1px solid var(--glass-border);
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        .prompt-header {
+            position: relative;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .prompt-header label {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .prompt-header:hover .prompt-tooltip {
+            display: block;
+            animation: fadeIn 0.3s forwards;
+        }
+
+        /* Add padding between the prompts header and content */
+        .prompts-header {
+            margin-bottom: 15px;
+            padding: 15px 15px 10px 15px;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        /* Make brush tool buttons more spacious with better height */
+        #brush-tools {
+            padding: 20px;
+            background: var(--bg-secondary);
+            border: 1px solid var(--glass-border);
+            border-radius: var(--bento-radius);
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: auto;
+            min-height: auto;
+        }
+        
+        #brush-tools .btn-group {
+            display: flex;
+            flex-direction: column !important;
+            width: 100%;
+            gap: 15px; /* Space between buttons */
+        }
+        
+        #brush-tools .btn {
+            width: 100%;
+            height: 50px; /* Taller buttons */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 0 16px;
+            font-size: var(--font-size-md);
+            border-radius: 8px;
+            background-color: var(--bg-primary);
+            border: 1px solid var(--glass-border);
+            transition: all 0.2s ease;
+            margin: 0;
+        }
+        
+        #brush-tools .btn.active {
+            background-color: var(--accent-primary);
+            color: white;
+            border-color: var(--accent-primary);
+        }
+        
+        #brush-tools .btn:hover {
+            background-color: var(--accent-secondary);
+            color: white;
+            border-color: var(--accent-secondary);
+            transform: translateY(-2px);
+        }
+        
+        #clear-btn {
+            width: 100%;
+            height: 50px; /* Match the height of other buttons */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+            border-radius: 8px;
+            font-size: var(--font-size-md);
+            background-color: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+        
+        #clear-btn:hover {
+            background-color: rgba(239, 68, 68, 0.2);
+            border-color: rgba(239, 68, 68, 0.3);
+            transform: translateY(-2px);
+        }
+        
+        /* Fix tooltips/popups getting cut off */
+        .option-description-tooltip,
+        .slider-tooltip,
+        .prompt-tooltip {
+            position: absolute;
+            z-index: 1000;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: var(--font-size-sm);
+            max-width: 250px;
+            width: auto;
+            text-align: center;
+            pointer-events: none;
+        }
+        
+        .option-description-tooltip {
+            top: -50px; /* Position higher to avoid being cut off */
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        .slider-tooltip {
+            top: -45px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+        
+        /* Make more space for the slider */
+        .slider-container {
+            margin: 15px 0;
+            width: 100%;
+        }
+        
+        /* Wand Size label styling */
+        #brush-tools label {
+            color: var(--text-primary) !important;
+            font-weight: 500;
+            font-size: var(--font-size-md);
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        /* Tooltip styles */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            cursor: help;
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 300px;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            text-align: left;
+            border-radius: 6px;
+            padding: 12px;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%; /* Position above the element instead of below */
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--glass-border);
+            font-size: var(--font-size-sm);
+            line-height: 1.5;
+            pointer-events: none;
+        }
+
+        .tooltip .tooltip-text::after {
+            content: "";
+            position: absolute;
+            top: 100%; /* Places the triangle at the bottom of the tooltip */
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: var(--bg-secondary) transparent transparent transparent;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+            animation: fadeInCentered 0.3s forwards;
+        }
+
+        /* Specific tooltip adjustments for prompt section */
+        .prompt-section .tooltip .tooltip-text {
+            bottom: 130%; /* Position even higher for prompt tooltips */
+            width: 250px;
+        }
+
+        /* Ensure tooltips are fully visible for the brush tools */
+        #brush-tools .tooltip .tooltip-text {
+            bottom: 130%;
+            width: 220px;
+        }
+
+        #submissionsModal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            z-index: 2000;
+            overflow: auto;
+            justify-content: center;
+            align-items: flex-start;
+            padding-top: 30px;
+        }
+
+        .submissions-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding-top: 30px;
+            overflow: auto;
+        }
+
+        .submissions-modal-content {
+            position: relative;
+            width: 90%;
+            height: 90%;
+            max-width: 1200px;
+            background-color: var(--bg-primary);
+            border-radius: var(--bento-radius);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--shadow-lg);
+            margin: 0 auto 2% auto;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #submissionsMap {
+            width: 100%;
+            height: 100%;
+            flex: 1;
+        }
+
+        .close-map {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 40px;
+            height: 40px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--glass-border);
+            border-radius: 50%;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 2050;
+            box-shadow: var(--shadow-md);
+            transition: all 0.2s ease;
+        }
+
+        .close-map:hover {
+            background-color: var(--accent-primary);
+            color: white;
+            transform: scale(1.1);
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            z-index: 2000;
+            overflow: auto;
+        }
+
+        .modal-content {
+            position: relative;
+            width: 90%;
+            max-width: 800px;
+            background-color: var(--bg-primary);
+            border-radius: var(--bento-radius);
+            border: 1px solid var(--glass-border);
+            box-shadow: var(--shadow-lg);
+            margin: 5% auto;
+            padding: 20px;
+            overflow-y: auto;
+            max-height: 90vh;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 15px;
+            margin-bottom: 15px;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: var(--text-primary);
+        }
+
+        .modal-body {
+            padding-right: 10px;
+        }
+
+        #aboutModal, #howToUseModal {
+            z-index: 3000;
+        }
+
+        /* Footer in left panel */
+        .panel-footer {
+            padding: 15px;
+            border-top: 1px solid var(--glass-border);
+            margin-top: auto;
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        
+        .panel-footer p {
+            margin: 0;
+            padding: 0;
+            font-size: 11px !important;
+        }
+
+        /* Remove the panel-footer from bento-controls */
+        .bento-controls .panel-footer {
+            display: none;
+        }
+
+        .submissions-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(5px);
+            z-index: 2000;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding-top: 30px;
+            overflow: auto;
+        }
+
+        .close-map {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 40px;
+            height: 40px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--glass-border);
+            border-radius: 50%;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 2050;
+            box-shadow: var(--shadow-md);
+            transition: all 0.2s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="bento-container">
+        <!-- Header Section -->
+        <div class="bento-header">
+            <div class="header-content">
+                <div class="header-title">
+                    <img src="assets/images/logo.png" alt="Co-design Canvas Logo" class="header-logo">
+                    <div class="header-text">
+                        <h1 class="app-title">Co-design Canvas</h1>
+                        <p class="app-subtitle">A collaborative spatial design platform</p>
+                    </div>
+                </div>
+            </div>
+            <div class="header-buttons">
+                <button id="viewSubmissionsBtn" class="header-button">View Submissions</button>
+                <button id="howToUseBtn" class="help-button">How to Use</button>
+                <button id="aboutBtn" class="help-button">About</button>
+                <button id="connectedUsersBtn" class="header-button">
+                    Collaborators (0)
+                    <span class="status-dot user-1"></span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Left Panel - Prompts -->
+        <div class="bento-prompts">
+            <div class="prompt-card">
+                <div class="prompts-header">
+                    <span class="option-title">Describe the Change</span>
+                    <div class="option-description-tooltip">Use these prompts to guide the AI in generating your ideal space</div>
+                </div>
+                <div class="prompt-container">
+                    <div class="prompt-input-group">
+                        <div class="prompt-section">
+                            <div class="prompt-header">
+                                <label>What?</label>
+                                <div class="prompt-tooltip">Describe the main subject or elements you want to see in your space. Focus on furniture, design elements, or activities.</div>
+                            </div>
+                            <textarea id="main-subject-prompt" placeholder="Describe the main subject" data-example="Example: A modern, minimalist study space with a sleek desk">Example: A modern, minimalist study space with a sleek desk</textarea>
+                        </div>
+                        <div class="prompt-section">
+                            <div class="prompt-header">
+                                <label>Where?</label>
+                                <div class="prompt-tooltip">Describe the environment or context around your main elements. Consider lighting, views, and spatial relationships.</div>
+                            </div>
+                            <textarea id="context-prompt" placeholder="Describe the environment" data-example="Example: With large windows overlooking a garden, natural light streaming in">Example: With large windows overlooking a garden, natural light streaming in</textarea>
+                        </div>
+                        <div class="prompt-section">
+                            <div class="prompt-header">
+                                <label>Avoid</label>
+                                <div class="prompt-tooltip">Specify what elements you don't want in the image. This helps refine the result by excluding unwanted features or qualities.</div>
+                            </div>
+                            <textarea id="avoid-prompt" placeholder="Describe what to avoid" data-example="Example: Clutter, dark lighting, old-fashioned furniture">Example: Clutter, dark lighting, old-fashioned furniture</textarea>
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <button class="generate-button" id="generate-button">
+                            <span class="generate-icon">✨</span> Imagine
+                        </button>
+                        <button type="button" class="submit-button" id="submit-to-map-btn" onclick="handleSubmission()">
+                            <span class="submit-icon">📍</span>
+                            Share your idea
+                        </button>
+                    </div>
+                    
+                    <!-- Footer content in prompt panel -->
+                    <div class="panel-footer">
+                        <p>Designed by Manas Bhatia, Graduate Student - MSCDP - Columbia University GSAPP. All rights reserved 2025</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main content wrapper -->
+        <div class="main-content">
+            <!-- Source Image Area -->
+            <div class="bento-editor">
+                <div class="editor-card">
+                    <h3>Source Image</h3>
+                    <div id="editor-container">
+                        <!-- Image editing area will be here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview Area -->
+            <div class="bento-preview">
+                <div class="preview-card">
+                    <h3>Preview Result</h3>
+                    <div id="preview-container">
+                        <!-- Generated image preview will be here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controls panel -->
+        <div class="bento-controls">
+            <div class="bento-card">
+                <div class="tab-nav">
+                    <button class="tab-btn active" data-tab="location">Location/View</button>
+                    <button class="tab-btn" data-tab="toolbox">Toolbox</button>
+                </div>
+                
+                <div class="tab-content">
+                    <!-- Location/View Tab (formerly Sources) -->
+                    <div class="tab-pane active" id="location-tab">
+                        <div class="location-options">
+                            <div class="option-section">
+                                <span class="option-title">Select Studio View</span>
+                                <div class="option-description-tooltip">Choose from preset views of the 600S Avery studio space at Columbia GSAPP</div>
+                                <button id="load-view-btn" class="option-btn">
+                                    <span>🖼️</span> Select View
+                                </button>
+                            </div>
+                            
+                            <div class="option-divider">
+                                <span>OR</span>
+                            </div>
+                            
+                            <div class="option-section">
+                                <span class="option-title">Find Location</span>
+                                <div class="option-description-tooltip">Search for a specific location or use the map to find a street view</div>
+                                <div id="streetViewSection">
+                                    <div class="location-input">
+                                        <input type="text" id="addressInput" placeholder="Enter an address or place name">
+                                        <button id="searchLocation" class="btn">Search</button>
+                                    </div>
+                                    <div id="map"></div>
+                                    <p class="map-instructions">Click on the map to select a location or search by address</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Combined Toolbox Tab (Tools + Modifiers) -->
+                    <div class="tab-pane" id="toolbox-tab">
+                        <!-- Brush Tools Section -->
+                        <div id="brush-tools">
+                            <span class="option-title">Tools</span>
+                            <div class="option-description-tooltip">Use these tools to mark areas of the image you want to modify</div>
+                            <div class="btn-group">
+                                <button id="brush-btn" class="btn active">
+                                    <span>🪄</span> Magic Wand
+                                    <div class="tool-tooltip">Paint areas you want to modify with AI</div>
+                                </button>
+                                <button id="eraser-btn" class="btn">
+                                    <span>🧽</span> Eraser
+                                    <div class="tool-tooltip">Remove paint from areas you don't want to modify</div>
+                                </button>
+                            </div>
+                            
+                            <div class="slider-container">
+                                <label for="brush-size">Wand Size: <span id="brush-size-label">5px</span></label>
+                                <input type="range" id="brush-size" min="1" max="10" value="5" class="prompt-slider">
+                            </div>
+                            
+                            <button id="clear-btn" class="btn">
+                                <span>🗑️</span> Clear
+                                <div class="tool-tooltip">Remove all paint from the image</div>
+                            </button>
+                        </div>
+
+                        <!-- Modifiers Section -->
+                        <div class="modifiers-section">
+                            <span class="option-title">Space Modifiers</span>
+                            <div class="option-description-tooltip">Adjust these sliders to control different aspects of the generated space</div>
+                            
+                            <div class="slider-groups">
+                                <!-- Lighting Theme -->
+                                <div class="slider-group">
+                                    <label for="lighting">Lighting</label>
+                                    <div class="slider-container">
+                                        <input type="range" id="lighting" min="0" max="100" value="0" step="25" class="slider">
+                                        <span class="slider-value">0%</span>
+                                        <div class="slider-tooltip">Adjust the balance between natural and artificial lighting in the space</div>
+                                    </div>
+                                </div>
+
+                                <!-- Layout Theme -->
+                                <div class="slider-group">
+                                    <label for="layout">Layout</label>
+                                    <div class="slider-container">
+                                        <input type="range" id="layout" min="0" max="100" value="0" step="25" class="slider">
+                                        <span class="slider-value">0%</span>
+                                        <div class="slider-tooltip">Configure the spatial organization and zoning of the space</div>
+                                    </div>
+                                </div>
+
+                                <!-- Community Theme -->
+                                <div class="slider-group">
+                                    <label for="community">Community</label>
+                                    <div class="slider-container">
+                                        <input type="range" id="community" min="0" max="100" value="0" step="25" class="slider">
+                                        <span class="slider-value">0%</span>
+                                        <div class="slider-tooltip">Define social interaction and collaborative spaces</div>
+                                    </div>
+                                </div>
+
+                                <!-- Functionality Theme -->
+                                <div class="slider-group">
+                                    <label for="functionality">Functionality</label>
+                                    <div class="slider-container">
+                                        <input type="range" id="functionality" min="0" max="100" value="0" step="25" class="slider">
+                                        <span class="slider-value">0%</span>
+                                        <div class="slider-tooltip">Adjust equipment, storage, and practical amenities</div>
+                                    </div>
+                                </div>
+
+                                <!-- Visual Elements Theme -->
+                                <div class="slider-group">
+                                    <label for="visual-elements">Visual Elements</label>
+                                    <div class="slider-container">
+                                        <input type="range" id="visual-elements" min="0" max="100" value="0" step="25" class="slider">
+                                        <span class="slider-value">0%</span>
+                                        <div class="slider-tooltip">Configure aesthetics, materials, and visual appeal</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- How to Use Modal -->
+    <div id="howToUseModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>How to Use</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="instruction-step">
+                    <h3>1. Select a View</h3>
+                    <div class="step-content">
+                        <p class="option"><strong>Option 1:</strong> Click Load View to select a view of the GSAPP studio.</p>
+                        <p class="option"><strong>Option 2:</strong> Click Load Street View to choose a Google Street View location on the university campus.</p>
+                    </div>
+                </div>
+                
+                <div class="instruction-step">
+                    <h3>2. Modify the Image</h3>
+                    <div class="step-content">
+                        <p>Use the Brush Tools to paint over areas you want to modify.</p>
+                        <p class="tip">💡 Tip: Cover the entire area where you want changes—no need to create a border.</p>
+                        <ul class="feature-list">
+                            <li>Adjust brush size with the slider</li>
+                            <li>Use the Eraser to remove marks</li>
+                            <li>Click Clear to reset your changes</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="instruction-step">
+                    <h3>3. Fine-Tune the GSAPP Studio View</h3>
+                    <div class="step-content">
+                        <p>For GSAPP studio images, use Image Modifiers to adjust the atmosphere:</p>
+                        <ul class="feature-list">
+                            <li><strong>Sunlight:</strong> Control lighting intensity</li>
+                            <li><strong>Movement:</strong> Add dynamic elements</li>
+                            <li><strong>Privacy:</strong> Adjust seclusion levels</li>
+                            <li><strong>Harmony:</strong> Balance the composition</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="instruction-step">
+                    <h3>4. Generate Your Image</h3>
+                    <div class="step-content">
+                        <p>Enter a description of what you want to see in the bottom prompt bar.</p>
+                        <p>Click Generate to apply changes.</p>
+                        <p class="tip">💡 Tip: The more specific your prompt, the better the results!</p>
+                    </div>
+                </div>
+                
+                <div class="instruction-step">
+                    <h3>5. Collaborate in Real-Time</h3>
+                    <div class="step-content">
+                        <p>Any changes made to the image will update in other users' windows, allowing for collaborative editing.</p>
+                        <p>Once satisfied, click Submit to finalize your image.</p>
+                    </div>
+                </div>
+                
+                <div class="instruction-step">
+                    <h3>6. View & Vote on Submissions</h3>
+                    <div class="step-content">
+                        <p>Click View Submissions to see a map of all previous submissions.</p>
+                        <p>Vote for your favorite submissions to highlight the best contributions.</p>
+                    </div>
+                </div>
+                
+                <div class="instruction-step">
+                    <h3>7. AI-powered Analysis</h3>
+                    <div class="step-content">
+                        <p>Click View AI Insights to get analysis of all submissions with key themes identified, powered by OpenAI.</p>
+                        <p>Download full reports of submissions including trends, top voted designs, and AI-generated insights.</p>
+                    </div>
+                </div>
+                
+                <p class="final-tip">Happy collaborating! 🚀</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- About Modal -->
+    <div id="aboutModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>About Co-Design Canvas</h2>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="instruction-step">
+                    <h3>What is Co-Design Canvas?</h3>
+                    <div class="step-content">
+                        <p>Co-Design Canvas is a collaborative spatial design visualization tool created at Columbia University GSAPP. It enables users to collectively reimagine and transform urban and interior spaces through AI-assisted image editing.</p>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <h3>Purpose</h3>
+                    <div class="step-content">
+                        <p>This innovative platform facilitates collaborative visualization and transformation of urban and interior spaces, leveraging advanced AI technology to bring design concepts to life.</p>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <h3>Key Features</h3>
+                    <div class="step-content">
+                        <ul class="feature-list">
+                            <li><strong>Real-time Collaboration:</strong> Work simultaneously with other users to modify and enhance urban spaces</li>
+                            <li><strong>AI-Powered Image Generation:</strong> Transform spaces using natural language prompts</li>
+                            <li><strong>Street View Integration:</strong> Select and modify real-world locations</li>
+                            <li><strong>Spatial Submissions:</strong> Share designs and vote on others' submissions via an interactive map</li>
+                            <li><strong>AI Analysis:</strong> Access comprehensive analysis and reports of all submissions with key themes</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="instruction-step">
+                    <h3>Academic Context</h3>
+                    <div class="step-content">
+                        <p>Developed as part of research on collaborative spatial design methodologies and the application of generative AI in community engagement, Co-Design Canvas represents a cutting-edge approach to participatory design.</p>
+                    </div>
+                </div>
+
+                <p class="final-tip">Created by Manas Bhatia, Graduate Student - MSCDP - Columbia University GSAPP, 2025</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Submissions Map Modal -->
+    <div id="submissionsModal">
+        <div class="submissions-modal-content">
+            <button class="close-map">&times;</button>
+            <div id="submissionsMap"></div>
+        </div>
+    </div>
+
+    <!-- Image Selection Modal -->
+    <div id="imageSelectionModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>Select Studio View</h2>
+            <p class="modal-description">These images show different perspectives of the 600S Avery studio space at Columbia University GSAPP. Select a view to use as your base image for modifications.</p>
+            <div id="imageGrid" class="image-grid">
+                <div class="image-item" data-image="assets/images/starting1.jpeg">
+                    <div class="image-container">
+                        <img src="assets/images/starting1.jpeg" alt="View 1">
+                    </div>
+                    <div class="image-label">View 1</div>
+                </div>
+                <div class="image-item" data-image="assets/images/starting2.jpeg">
+                    <div class="image-container">
+                        <img src="assets/images/starting2.jpeg" alt="View 2">
+                    </div>
+                    <div class="image-label">View 2</div>
+                </div>
+                <div class="image-item" data-image="assets/images/starting3.jpeg">
+                    <div class="image-container">
+                        <img src="assets/images/starting3.jpeg" alt="View 3">
+                    </div>
+                    <div class="image-label">View 3</div>
+                </div>
+                <div class="image-item" data-image="assets/images/starting4.jpeg">
+                    <div class="image-container">
+                        <img src="assets/images/starting4.jpeg" alt="View 4">
+                    </div>
+                    <div class="image-label">View 4</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Location Selection Modal -->
+    <div id="locationModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <h2>Find Location</h2>
+            <div id="streetViewSection" class="hidden">
+                <div class="location-input">
+                    <input type="text" id="addressInput" placeholder="Enter an address or place name">
+                    <button id="searchLocation" class="btn">Search</button>
+                </div>
+                <div id="map"></div>
+                <p class="map-instructions">Click on the map to select a location or search by address</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Street View Section (hidden by default, for script compatibility) -->
+    <div id="streetViewContainer" class="hidden">
+        <div id="streetViewPano"></div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="site-footer" style="display: none;">
+        <p>Designed by Manas Bhatia, Graduate Student - MSCDP - Columbia University GSAPP. All rights reserved 2025</p>
+    </footer>
+
+    <!-- Google Maps API -->
+    <script>
+      // Define How to Use Modal functions first
+      window.openHowToUseModal = function() {
+        const modal = document.getElementById('howToUseModal');
+        if (modal) {
+          modal.style.display = 'block';
+          console.log('Modal display set to block');
+        } else {
+          console.error('Modal element not found');
+        }
+      };
+      
+      window.closeHowToUseModal = function() {
+        const modal = document.getElementById('howToUseModal');
+        if (modal) {
+          modal.style.display = 'none';
+        }
+      };
+      
+      // Define About Modal functions
+      window.openAboutModal = function() {
+        const modal = document.getElementById('aboutModal');
+        if (modal) {
+          modal.style.display = 'block';
+          console.log('About modal display set to block');
+        } else {
+          console.error('About modal element not found');
+        }
+      };
+      
+      window.closeAboutModal = function() {
+        const modal = document.getElementById('aboutModal');
+        if (modal) {
+          modal.style.display = 'none';
+        }
+      };
+      
+      // Store map styles globally so they can be reused
+      window.mapStyles = [
+        {
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#f5f5f5"
+            }
+          ]
+        },
+        {
+          "elementType": "labels.icon",
+          "stylers": [
+            {
+              "visibility": "off"
+            }
+          ]
+        },
+        {
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#616161"
+            }
+          ]
+        },
+        {
+          "elementType": "labels.text.stroke",
+          "stylers": [
+            {
+              "color": "#f5f5f5"
+            }
+          ]
+        },
+        {
+          "featureType": "administrative.land_parcel",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#e5e5e5"
+            },
+            {
+              "visibility": "on"
+            }
+          ]
+        },
+        {
+          "featureType": "administrative.land_parcel",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#bdbdbd"
+            }
+          ]
+        },
+        {
+          "featureType": "landscape.natural.terrain",
+          "stylers": [
+            {
+              "visibility": "off"
+            }
+          ]
+        },
+        {
+          "featureType": "poi",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#eeeeee"
+            }
+          ]
+        },
+        {
+          "featureType": "poi",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#757575"
+            }
+          ]
+        },
+        {
+          "featureType": "poi.park",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#cbd8cb"
+            }
+          ]
+        },
+        {
+          "featureType": "poi.park",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#9e9e9e"
+            }
+          ]
+        },
+        {
+          "featureType": "road",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#ffffff"
+            }
+          ]
+        },
+        {
+          "featureType": "road.arterial",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#b8b8b8"
+            }
+          ]
+        },
+        {
+          "featureType": "road.highway",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#dadada"
+            }
+          ]
+        },
+        {
+          "featureType": "road.highway",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#616161"
+            }
+          ]
+        },
+        {
+          "featureType": "road.local",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#9e9e9e"
+            }
+          ]
+        },
+        {
+          "featureType": "transit.line",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#e5e5e5"
+            },
+            {
+              "visibility": "off"
+            }
+          ]
+        },
+        {
+          "featureType": "transit.station",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#eeeeee"
+            },
+            {
+              "visibility": "off"
+            }
+          ]
+        },
+        {
+          "featureType": "water",
+          "elementType": "geometry",
+          "stylers": [
+            {
+              "color": "#beccd5"
+            }
+          ]
+        },
+        {
+          "featureType": "water",
+          "elementType": "labels.text.fill",
+          "stylers": [
+            {
+              "color": "#9e9e9e"
+            }
+          ]
+        }
+      ];
+    
+      // Define placeholder for initialization functions
+      window.initializeWebSocket = function() {
+        console.log('Placeholder initializeWebSocket called');
+        // This is just a placeholder until the real function from script.js is loaded
+        return true;
+      };
+
+      window.initializeDrawingCanvas = function(image = null) {
+        // This is a placeholder - the real function from script.js will be used
+        console.log('Placeholder initializeDrawingCanvas called');
+      };
+
+      window.updateStreetView = function(location) {
+        // This is a placeholder - the real function from script.js will be used
+        console.log('Placeholder updateStreetView called with location:', location);
+      };
+      
+      // Helper function to safely show the Street View section
+      window.showStreetViewSection = function() {
+        const streetViewSection = document.getElementById('streetViewSection');
+        if (streetViewSection) {
+          // First make the section visible
+          streetViewSection.classList.remove('hidden');
+          
+          // Wait a moment for the DOM to update
+          setTimeout(() => {
+            // Check if we need to initialize the map
+            if (!window.map || !window.map.getDiv) {
+              console.log('Map needs to be initialized after section becomes visible');
+              
+              // Create a new map instance since the div is now visible
+              const mapOptions = {
+                center: { lat: 40.7128, lng: -74.0060 },  // New York City coordinates
+                zoom: 12,
+                styles: window.mapStyles || []
+              };
+              
+              try {
+                window.map = new google.maps.Map(document.getElementById('map'), mapOptions);
+                map = window.map; // Also update local variable
+                
+                console.log('Map initialized after section became visible:', window.map);
+              } catch (error) {
+                console.error('Error initializing map after section became visible:', error);
+              }
+            } else {
+              // Map exists, just trigger resize
+              google.maps.event.trigger(window.map, 'resize');
+              window.map.setCenter({ lat: 40.7128, lng: -74.0060 });
+              console.log('Triggered map resize event on existing map');
+              
+              // Make sure click event is working
+              if (typeof window.initializeMapClickEvents === 'function') {
+                window.initializeMapClickEvents();
+              }
+            }
+          }, 100); // Short delay to ensure the element is visible
+        }
+      };
+
+      // Define initMap globally before loading the API
+      window.initMap = function() {
+        console.log('Initializing map...');
+        
+        // Check if the map element is visible
+        const mapElement = document.getElementById('map');
+        const isVisible = mapElement && mapElement.offsetParent !== null;
+        
+        if (!isVisible) {
+          console.log('Map container is not visible, deferring initialization...');
+          // Store that initialization was attempted but not completed
+          window.mapInitialized = false;
+          return;
+        }
+        
+        // Initialize the map
+        const mapOptions = {
+          center: { lat: 40.7128, lng: -74.0060 },  // New York City coordinates
+          zoom: 12,
+          styles: window.mapStyles || []
+        };
+        
+        try {
+          // Create the map and explicitly assign it to window.map
+          window.map = new google.maps.Map(document.getElementById('map'), mapOptions);
+          map = window.map; // Also assign to local variable for compatibility
+          
+          console.log('Map created:', window.map);
+          
+          // Flag that map is initialized
+          window.mapInitialized = true;
+          
+          // Initialize geocoder
+          window.geocoder = new google.maps.Geocoder();
+          geocoder = window.geocoder;
+          
+          // Initialize StreetViewService
+          streetViewService = new google.maps.StreetViewService();
+          
+          // Initialize search box
+          const input = document.getElementById('addressInput');
+          if (input) {
+            const autocomplete = new google.maps.places.PlaceAutocompleteElement(input, {
+                componentRestrictions: { country: 'us' },
+                fields: ['place_id', 'geometry', 'name', 'formatted_address']
+            });
+
+            // Set up listener for place selection
+            autocomplete.addListener('place_changed', () => {
+                const place = autocomplete.getPlace();
+                if (!place.geometry) {
+                    console.warn('No details available for input: ' + place.name);
+                    return;
+                }
+
+                // If the place has a geometry, then present it on the map
+                if (place.geometry.viewport) {
+                    map.fitBounds(place.geometry.viewport);
+                } else {
+                    map.setCenter(place.geometry.location);
+                    map.setZoom(17);
+                }
+
+                // Add a marker for the selected place
+                if (marker) {
+                    marker.setMap(null);
+                }
+                marker = new google.maps.Marker({
+                    map: map,
+                    position: place.geometry.location
+                });
+            });
+          }
+        } catch (error) {
+          console.error('Error initializing map:', error);
+          window.mapInitialized = false;
+        }
+        
+        // Initialize the drawing canvas using placeholder function
+        if (window.initializeDrawingCanvas) {
+          window.initializeDrawingCanvas();
+        }
+        
+        // Initialize WebSocket using placeholder function
+        if (window.initializeWebSocket) {
+          window.initializeWebSocket();
+        }
+      };
+
+      // Tab Initialization
+      function initializeTabs() {
+        // Query for all tab buttons and tab panes
+        const tabButtons = document.querySelectorAll('.tab-btn');
+        const tabPanes = document.querySelectorAll('.tab-pane');
+        
+        console.log(`Found ${tabPanes.length} tab panes`);
+        
+        // Hide all tab panes initially and remove active class
+        tabPanes.forEach(pane => {
+          pane.classList.remove('active');
+          pane.style.display = 'none';
+        });
+        
+        // If we have tab panes, display the first one and make first button active
+        if (tabPanes.length > 0 && tabButtons.length > 0) {
+          const firstPane = tabPanes[0];
+          
+          // Set display to flex for active tab
+          firstPane.style.display = 'flex';
+          
+          firstPane.classList.add('active');
+          tabButtons[0].classList.add('active');
+          console.log(`Activated tab pane: ${firstPane.id}`);
+        }
+        
+        // Add click event listeners to each tab button
+        tabButtons.forEach(button => {
+          button.addEventListener('click', function() {
+            // Remove active class from all buttons
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            
+            // Add active class to clicked button
+            this.classList.add('active');
+            
+            // Hide all tab panes
+            tabPanes.forEach(pane => {
+              pane.classList.remove('active');
+              pane.style.display = 'none';
+            });
+            
+            // Show the selected tab pane
+            const tabId = this.getAttribute('data-tab');
+            const activePane = document.getElementById(tabId + '-tab');
+            if (activePane) {
+              activePane.classList.add('active');
+              activePane.style.display = 'flex';
+              console.log(`Activated tab pane: ${activePane.id}`);
+            } else {
+              console.error(`Tab pane not found for ID: ${tabId}-tab`);
+            }
+          });
+        });
+      }
+      
+      // Initialize tabs when DOM is loaded
+      document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM fully loaded');
+        initializeTabs();
+        
+        // Setup modal outside click handlers
+        document.querySelectorAll('.modal').forEach(function(modal) {
+          // Close when clicking outside the modal content
+          modal.addEventListener('click', function(event) {
+            if (event.target === this) {
+              modal.style.display = 'none';
+              console.log('Closing modal from outside click');
+            }
+          });
+        });
+        
+        // Ensure example text is visible on load and stays visible
+        const textareas = document.querySelectorAll('.prompt-section textarea');
+        textareas.forEach(textarea => {
+          // Make sure textarea has the example text
+          if (!textarea.value || textarea.value.trim() === '') {
+            textarea.value = textarea.dataset.example;
+          }
+          
+          // Clear example text when focused
+          textarea.addEventListener('focus', function() {
+            if (this.value === this.dataset.example) {
+              this.value = '';
+            }
+          });
+        });
+        
+        // Setup View Submissions button
+        const viewSubmissionsBtn = document.getElementById('viewSubmissionsBtn');
+        if (viewSubmissionsBtn) {
+          viewSubmissionsBtn.addEventListener('click', function() {
+            // Let script.js handle this if possible
+            if (typeof window.openSubmissionsModal === 'function') {
+              window.openSubmissionsModal();
+            } else {
+              // Fallback to direct DOM manipulation
+              const modal = document.getElementById('submissionsModal');
+              if (modal) {
+                modal.style.display = 'block';
+                // Initialize the submissions map
+                initializeSubmissionsMap();
+              }
+            }
+          });
+        }
+        
+        // Setup How to Use button
+        const howToUseBtn = document.getElementById('howToUseBtn');
+        if (howToUseBtn) {
+          howToUseBtn.addEventListener('click', function() {
+            // Direct DOM manipulation - simpler and more reliable
+            const modal = document.getElementById('howToUseModal');
+            if (modal) {
+              modal.style.display = 'block';
+              console.log('Displaying How to Use modal');
+            } else {
+              console.error('How to Use modal element not found');
+            }
+          });
+        }
+        
+        // Setup About button
+        const aboutBtn = document.getElementById('aboutBtn');
+        if (aboutBtn) {
+          aboutBtn.addEventListener('click', function() {
+            // Direct DOM manipulation - simpler and more reliable
+            const modal = document.getElementById('aboutModal');
+            if (modal) {
+              modal.style.display = 'block';
+              console.log('Displaying About modal');
+            } else {
+              console.error('About modal element not found');
+            }
+          });
+        }
+        
+        // Setup close button for submissions modal
+        const closeMapBtn = document.querySelector('.close-map');
+        if (closeMapBtn) {
+          closeMapBtn.addEventListener('click', function() {
+            const modal = document.getElementById('submissionsModal');
+            if (modal) {
+              modal.style.display = 'none';
+            }
+          });
+        }
+        
+        // Setup close button in the How to Use modal
+        const closeButtons = document.querySelectorAll('.close-modal');
+        if (closeButtons && closeButtons.length > 0) {
+          closeButtons.forEach(button => {
+            button.addEventListener('click', function() {
+              const modal = this.closest('.modal');
+              if (modal) {
+                modal.style.display = 'none';
+              }
+            });
+          });
+        }
+        
+        // Hide test socket button if it exists
+        const testSocketBtn = document.getElementById('testSocketBtn');
+        if (testSocketBtn) {
+          testSocketBtn.style.display = 'none';
+        }
+        
+        // Initialize load view button functionality
+        const loadViewBtn = document.getElementById('load-view-btn');
+        if (loadViewBtn) {
+          loadViewBtn.addEventListener('click', function() {
+            const modal = document.getElementById('imageSelectionModal');
+            if (modal) {
+              modal.style.display = 'block';
+            }
+          });
+        }
+        
+        // Create global references for script.js compatibility
+        window.loadStreetViewBtn = document.getElementById('load-streetview-btn');
+        window.loadImageBtn = document.getElementById('load-view-btn');
+        
+        // Initialize Location/View tab with map
+        const locationTabBtn = document.querySelector('.tab-btn[data-tab="location"]');
+        if (locationTabBtn) {
+          locationTabBtn.addEventListener('click', function() {
+            // Small delay to ensure the tab is visible
+            setTimeout(() => {
+              console.log('Initializing map in location tab');
+              initializeMap();
+            }, 100);
+          });
+        }
+        
+        // Initialize map on page load since Location/View is active by default
+        setTimeout(() => {
+          console.log('Initializing map on page load for Location/View tab');
+          initializeMap();
+        }, 500);
+        
+        // Setup close buttons for all modals
+        document.querySelectorAll('.modal .close-modal').forEach(closeBtn => {
+          closeBtn.addEventListener('click', function() {
+            const modal = this.closest('.modal');
+            if (modal) {
+              modal.style.display = 'none';
+            }
+          });
+        });
+      });
+      
+      // Function to initialize the map
+      function initializeMap() {
+        
+        // Close modals when clicking outside the content
+        document.querySelectorAll('.modal').forEach(modal => {
+          modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+              this.style.display = 'none';
+            }
+          });
+        });
+        
+        // Add window resize event handler to properly resize maps and layout
+        window.addEventListener('resize', function() {
+          // Resize submissions map if it exists
+          if (window.submissionsMap) {
+            console.log('Window resize detected, resizing submissions map');
+            google.maps.event.trigger(window.submissionsMap, 'resize');
+          }
+          
+          // Resize main map if it exists
+          if (window.map) {
+            console.log('Resizing main map');
+            google.maps.event.trigger(window.map, 'resize');
+          }
+        });
+      }
+      
+      // Function to initialize the map
+      function initializeMap() {
+        // Make sure the map container is visible
+        const mapElement = document.getElementById('map');
+        if (!mapElement) {
+          console.error('Map element not found');
+          return;
+        }
+        
+        // Check if the map is in a hidden tab or container
+        if (mapElement.offsetWidth === 0 || mapElement.offsetHeight === 0) {
+          console.log('Map container has zero dimensions, may be in a hidden tab');
+          
+          // Force tab to be visible if it's in sources tab
+          const sourcesTab = document.getElementById('toolbox-tab');
+          if (sourcesTab) {
+            if (!sourcesTab.classList.contains('active')) {
+              console.log('Forcing sources tab to be active');
+              const sourcesTabBtn = document.querySelector('.tab-btn[data-tab="toolbox"]');
+              if (sourcesTabBtn) {
+                sourcesTabBtn.click();
+              }
+            }
+          }
+        }
+        
+        console.log('Map element found, dimensions:', mapElement.offsetWidth, 'x', mapElement.offsetHeight);
+        
+        const mapOptions = {
+          center: { lat: 40.8075, lng: -73.9626 }, // Columbia University coordinates
+          zoom: 16,
+          mapTypeId: google.maps.MapTypeId.ROADMAP,
+          fullscreenControl: false,
+          mapTypeControl: true,
+          streetViewControl: false,
+          styles: window.mapStyles || []
+        };
+        
+        // Check if map already exists
+        if (window.map && window.map.getDiv) {
+          console.log('Map already exists, triggering resize');
+          google.maps.event.trigger(window.map, 'resize');
+          window.map.setCenter(mapOptions.center);
+          window.map.setOptions({styles: window.mapStyles});
+          return;
+        }
+        
+        try {
+          console.log('Creating new map instance');
+          window.map = new google.maps.Map(mapElement, mapOptions);
+          
+          // Trigger resize after map is loaded to fix any display issues
+          google.maps.event.addListenerOnce(window.map, 'idle', function() {
+            google.maps.event.trigger(window.map, 'resize');
+            console.log('Map initialization completed and resized');
+          });
+          
+          // Set up click handler for the map
+          window.map.addListener('click', function(event) {
+            console.log('Map clicked:', event.latLng.toString());
+            updateStreetView(event.latLng);
+          });
+          
+          // Set up autocomplete for the address input
+          const addressInput = document.getElementById('addressInput');
+          if (addressInput) {
+            const autocomplete = new google.maps.places.PlaceAutocompleteElement(addressInput, {
+                componentRestrictions: { country: 'us' },
+                fields: ['place_id', 'geometry', 'name', 'formatted_address']
+            });
+
+            // Set up listener for place selection
+            autocomplete.addListener('place_changed', () => {
+                const place = autocomplete.getPlace();
+                if (!place.geometry) {
+                    console.warn('No details available for input: ' + place.name);
+                    return;
+                }
+
+                // If the place has a geometry, then present it on the map
+                if (place.geometry.viewport) {
+                    map.fitBounds(place.geometry.viewport);
+                } else {
+                    map.setCenter(place.geometry.location);
+                    map.setZoom(17);
+                }
+
+                // Add a marker for the selected place
+                if (marker) {
+                    marker.setMap(null);
+                }
+                marker = new google.maps.Marker({
+                    map: map,
+                    position: place.geometry.location
+                });
+            });
+          }
+          
+          // Add event listener for the search button
+          const searchBtn = document.getElementById('searchLocation');
+          if (searchBtn) {
+            searchBtn.addEventListener('click', searchLocation);
+          }
+
+          function searchLocation() {
+            const address = document.getElementById('addressInput').value;
+            console.log('Searching for address:', address);
+            
+            const geocoder = new google.maps.Geocoder();
+            geocoder.geocode({ address: address }, function(results, status) {
+              if (status === google.maps.GeocoderStatus.OK) {
+                const location = results[0].geometry.location;
+                window.map.setCenter(location);
+                updateStreetView(location);
+              } else {
+                alert('Geocoding was not successful for the following reason: ' + status);
+              }
+            });
+          }
+          
+          // Add keypress event to search on Enter
+          if (addressInput) {
+            addressInput.addEventListener('keypress', function(e) {
+              if (e.key === 'Enter') {
+                e.preventDefault(); // Prevent form submission
+                // Only if no autocomplete is shown, do manual search
+                if (!document.querySelector('.pac-container:visible')) {
+                  searchLocation();
+                }
+              }
+            });
+          }
+          
+          console.log('Map initialized successfully');
+        } catch (error) {
+          console.error('Error initializing map:', error);
+        }
+      }
+      
+      // Function to update street view with a location
+      function updateStreetView(location) {
+        if (!location) return;
+        
+        // Create marker at the location
+        if (window.currentMarker) {
+          window.currentMarker.setMap(null);
+        }
+        
+        window.currentMarker = new google.maps.Marker({
+          position: location,
+          map: window.map,
+          animation: google.maps.Animation.DROP
+        });
+        
+        // Get street view panorama
+        const streetViewService = new google.maps.StreetViewService();
+        streetViewService.getPanorama({ location: location, radius: 50 }, function(data, status) {
+          if (status === google.maps.StreetViewStatus.OK) {
+            // Use the found street view panorama
+            const streetViewImage = `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${location.lat()},${location.lng()}&fov=90&heading=270&pitch=0&key=AIzaSyCUcYsGhKFTDsYu64sb4P4JOOCoxEbHhy4`;
+            
+            // Update the editor with the street view image
+            const editorContainer = document.getElementById('editor-container');
+            if (editorContainer) {
+              // Clear previous content
+              editorContainer.innerHTML = '';
+              
+              // Create and add the image
+              const img = document.createElement('img');
+              img.src = streetViewImage;
+              img.style.maxWidth = '100%';
+              img.style.maxHeight = '100%';
+              img.alt = 'Street View';
+              img.onload = function() {
+                console.log('Street view image loaded successfully');
+              };
+              img.onerror = function() {
+                console.error('Failed to load street view image');
+              };
+              editorContainer.appendChild(img);
+              
+              // Log that we're updating the editor container
+              console.log('Updated editor container with street view image:', streetViewImage);
+            } else {
+              console.error('Editor container not found');
+            }
+          } else {
+            alert('No Street View available at this location. Please try another spot.');
+          }
+        });
+      }
+
+      // Initialize all sliders to 0
+      function initializeSliders() {
+        // Set all sliders to 0 and update their displayed values
+        document.querySelectorAll('.prompt-slider').forEach(function(slider) {
+          slider.value = 0;
+          
+          // Update the display value
+          const valueDisplay = slider.nextElementSibling;
+          if (valueDisplay && valueDisplay.classList.contains('slider-value')) {
+            valueDisplay.textContent = '0%';
+          }
+          
+          // Add input event listener to update the displayed value when slider changes
+          slider.addEventListener('input', function() {
+            const valueDisplay = this.nextElementSibling;
+            if (valueDisplay && valueDisplay.classList.contains('slider-value')) {
+              valueDisplay.textContent = this.value + '%';
+            }
+          });
+        });
+      }
+
+      // Function to initialize the submissions map
+      function initializeSubmissionsMap() {
+        // If map already exists just resize it
+        if (window.submissionsMap && window.submissionsMap.getDiv) {
+          setTimeout(() => {
+            google.maps.event.trigger(window.submissionsMap, 'resize');
+          }, 100);
+          return;
+        }
+        
+        // Create a new map if it doesn't exist
+        const mapElement = document.getElementById('submissionsMap');
+        if (mapElement) {
+          const mapOptions = {
+            center: { lat: 40.8075, lng: -73.9626 }, // Columbia University coordinates
+            zoom: 14,
+            mapTypeId: google.maps.MapTypeId.ROADMAP,
+            styles: window.mapStyles || []
+          };
+          
+          try {
+            console.log('Creating submissions map');
+            window.submissionsMap = new google.maps.Map(mapElement, mapOptions);
+            
+            // Add listener to resize the map when it's fully loaded
+            google.maps.event.addListenerOnce(window.submissionsMap, 'idle', function() {
+              google.maps.event.trigger(window.submissionsMap, 'resize');
+              console.log('Submissions map initialized and resized');
+            });
+            
+            // This is where you would add markers from your database or other source
+            // For now, just add a sample marker at Columbia
+            new google.maps.Marker({
+              position: mapOptions.center,
+              map: window.submissionsMap,
+              title: 'Sample Submission'
+            });
+            
+          } catch (error) {
+            console.error('Error initializing submissions map:', error);
+          }
+        }
+      }
+    </script>
+    <script type="module" src="script.js"></script>
+    
+    <!-- Firebase Analytics -->
+    <script>
+        // Initialize Firebase Analytics with error handling
+        try {
+            if (typeof firebase !== 'undefined' && firebase.analytics) {
+                const analytics = firebase.analytics();
+                console.log('Firebase Analytics initialized successfully');
+            } else {
+                console.warn('Firebase Analytics not available - this is normal if using an ad blocker');
+            }
+        } catch (error) {
+            console.warn('Firebase Analytics initialization failed - this is normal if using an ad blocker:', error);
+        }
+    </script>
+    
+    <!-- Improved example text handling -->
+    <script>
+        // Wait for page to fully load
+        window.addEventListener('load', function() {
+            // Set example text on load
+            initializePrompts();
+            
+            function initializePrompts() {
+                document.querySelectorAll('.prompt-section textarea').forEach(function(textarea) {
+                    // Skip the avoid textarea if it's empty
+                    if (textarea.id === 'avoid' && (!textarea.value || textarea.value.trim() === '')) {
+                        return;
+                    }
+                    // For other textareas, set example text if empty
+                    if (!textarea.value || textarea.value.trim() === '') {
+                        textarea.value = textarea.dataset.example;
+                    }
+                });
+            }
+        });
+    </script>
+
+    <!-- Text standardization styles -->
+    <style>
+        /* Standardize text styling across the website */
+        
+        /* Headings - Title Case */
+        h1, h2, h3, h4, h5, h6,
+        .app-title,
+        .modal-header h2,
+        .option-title {
+            text-transform: capitalize;
+            font-weight: 600;
+            margin-bottom: 15px;
+            letter-spacing: -0.01em;
+        }
+        
+        h1, .app-title {
+            font-size: var(--font-size-2xl);
+        }
+        
+        h2, .modal-header h2 {
+            font-size: var(--font-size-xl);
+        }
+        
+        h3, .editor-card h3, .preview-card h3, .modal-body h3 {
+            font-size: var(--font-size-lg);
+            margin-bottom: 10px;
+        }
+        
+        /* All buttons - Consistent text size and capitalization */
+        button,
+        .btn,
+        .header-button,
+        .help-button,
+        .option-btn,
+        .generate-button,
+        .submit-button,
+        .tab-btn,
+        #searchLocation {
+            font-size: var(--font-size-sm) !important;
+            text-transform: capitalize;
+            font-weight: 500;
+        }
+        
+        /* All section titles - Consistent styling */
+        .option-title,
+        .prompt-header label,
+        .slider-group label {
+            font-size: var(--font-size-md) !important;
+            font-weight: 600;
+            text-transform: capitalize;
+        }
+        
+        /* All tooltips - Consistent styling */
+        .tool-tooltip,
+        .option-description-tooltip,
+        .slider-tooltip,
+        .prompt-tooltip {
+            font-size: var(--font-size-xs) !important;
+            padding: 8px 12px;
+            border-radius: 6px;
+            text-align: center;
+            max-width: 250px;
+        }
+        
+        /* All input fields - Consistent text size */
+        input,
+        textarea,
+        .prompt-section textarea,
+        .location-input input,
+        #addressInput {
+            font-size: var(--font-size-md) !important;
+        }
+        
+        /* Helper text and paragraph text - Consistent styling */
+        p, li, .map-instructions, .slider-value {
+            font-size: var(--font-size-sm) !important;
+            line-height: 1.5;
+        }
+        
+        /* Modal content text - Consistent sizing */
+        .modal-body p,
+        .modal-description,
+        .modal-body li {
+            font-size: var(--font-size-md) !important;
+            line-height: 1.6;
+        }
+        
+        /* Override specific conflicting styles */
+        #location-tab .option-title {
+            font-size: var(--font-size-md) !important;
+            text-transform: capitalize;
+            font-weight: 600;
+        }
+        
+        .prompt-header label {
+            text-transform: capitalize;
+            letter-spacing: 0;
+        }
+        
+        /* Fix any location-specific text misalignments */
+        .location-options .option-title,
+        .modifiers-section .option-title,
+        #brush-tools .option-title {
+            padding: 0 !important;
+            font-size: var(--font-size-md) !important;
+            text-transform: capitalize;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+        
+        /* Remove any text-transform: uppercase that might be present */
+        .prompt-section label {
+            text-transform: capitalize !important;
+        }
+    </style>
+</body>
+</html> 

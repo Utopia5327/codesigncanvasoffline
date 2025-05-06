@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Studio Survey Analysis</title>
+    <style>
+        :root {
+            --positive-color: #28a745;
+            --negative-color: #dc3545;
+            --neutral-color: #6c757d;
+            --final-color: #0d6efd;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 40px;
+        }
+
+        .analysis-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .theme-card {
+            background: var(--card-bg);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+
+        .theme-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .theme-card h3 {
+            color: var(--neutral-color);
+            margin-top: 0;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .quote-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .quote-item {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+            position: relative;
+        }
+
+        .quote-positive {
+            background-color: #d4edda;
+            border-left: 4px solid var(--positive-color);
+        }
+
+        .quote-negative {
+            background-color: #f8d7da;
+            border-left: 4px solid var(--negative-color);
+        }
+
+        .slider-result {
+            background: #e3f2fd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            border-left: 4px solid var(--final-color);
+        }
+
+        .process-steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 40px 0;
+        }
+
+        .step-card {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .step-card h4 {
+            color: var(--final-color);
+            margin-top: 0;
+        }
+
+        .implementation-notes {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 40px;
+        }
+
+        .implementation-notes ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        .implementation-notes li {
+            margin: 10px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+
+        .implementation-notes li::before {
+            content: "•";
+            color: var(--final-color);
+            font-weight: bold;
+            position: absolute;
+            left: 0;
+        }
+
+        @media (max-width: 768px) {
+            .analysis-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Studio Survey Thematic Analysis</h1>
+
+        <!-- Analysis Process -->
+        <div class="process-steps">
+            <div class="step-card">
+                <h4>1. Data Collection</h4>
+                <ul>
+                    <li>10 student responses analyzed</li>
+                    <li>Focus on experiences & improvements</li>
+                </ul>
+            </div>
+            <div class="step-card">
+                <h4>2. Theme Identification</h4>
+                <ul>
+                    <li>Key phrase extraction</li>
+                    <li>Sentiment marking (✓/✗)</li>
+                    <li>Concept grouping</li>
+                </ul>
+            </div>
+            <div class="step-card">
+                <h4>3. Pattern Recognition</h4>
+                <ul>
+                    <li>Recurring themes identified</li>
+                    <li>Opposing needs analyzed</li>
+                    <li>Mention frequency noted</li>
+                </ul>
+            </div>
+            <div class="step-card">
+                <h4>4. Slider Development</h4>
+                <ul>
+                    <li>Bipolar scales created</li>
+                    <li>Multiple points addressed</li>
+                    <li>Descriptive text developed</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Theme Analysis -->
+        <div class="analysis-grid">
+            <!-- Natural Light -->
+            <div class="theme-card">
+                <h3>Natural Light</h3>
+                <ul class="quote-list">
+                    <li class="quote-item quote-positive">"natural sunlight" ✓</li>
+                    <li class="quote-item quote-negative">"too much sunlight" ✗</li>
+                    <li class="quote-item quote-positive">"Better lighting" ✓</li>
+                    <li class="quote-item quote-negative">"cold lights... not flexible" ✗</li>
+                </ul>
+                <div class="slider-result">
+                    → Natural Light Slider
+                </div>
+            </div>
+
+            <!-- Social Aspects -->
+            <div class="theme-card">
+                <h3>Social Aspects</h3>
+                <ul class="quote-list">
+                    <li class="quote-item quote-negative">"zero privacy" ✗</li>
+                    <li class="quote-item quote-positive">"Interaction with people" ✓</li>
+                    <li class="quote-item quote-negative">"Miserable social interaction" ✗</li>
+                    <li class="quote-item quote-positive">"VERY collaborative" ✓</li>
+                </ul>
+                <div class="slider-result">
+                    → Social/Privacy Balance Slider
+                </div>
+            </div>
+
+            <!-- Organization -->
+            <div class="theme-card">
+                <h3>Organization</h3>
+                <ul class="quote-list">
+                    <li class="quote-item quote-negative">"Cluttered" ✗</li>
+                    <li class="quote-item quote-positive">"make everything versatile" ✓</li>
+                    <li class="quote-item quote-positive">"moveable desks" ✓</li>
+                    <li class="quote-item quote-positive">"moveable walls" ✓</li>
+                </ul>
+                <div class="slider-result">
+                    → Space Flexibility Slider
+                </div>
+            </div>
+
+            <!-- Comfort -->
+            <div class="theme-card">
+                <h3>Comfort Elements</h3>
+                <ul class="quote-list">
+                    <li class="quote-item quote-positive">"soothing environment" ✓</li>
+                    <li class="quote-item quote-positive">"calming environment" ✓</li>
+                    <li class="quote-item quote-positive">"Better smells" ✓</li>
+                    <li class="quote-item quote-negative">"visual clutter" ✗</li>
+                </ul>
+                <div class="slider-result">
+                    → Comfort/Atmosphere Slider
+                </div>
+            </div>
+        </div>
+
+        <!-- Implementation Notes -->
+        <div class="implementation-notes">
+            <h3>Implementation Notes</h3>
+            <ul>
+                <li>Each slider addresses multiple survey points</li>
+                <li>Spectrum of options provided for flexibility</li>
+                <li>Clear, descriptive language used throughout</li>
+                <li>Nuanced adjustments enabled for personalization</li>
+                <li>Focus on both current pain points and desired improvements</li>
+            </ul>
+        </div>
+    </div>
+</body>
+</html> 
