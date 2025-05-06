@@ -2458,7 +2458,7 @@
         streetViewService.getPanorama({ location: location, radius: 50 }, function(data, status) {
           if (status === google.maps.StreetViewStatus.OK) {
             // Use the found street view panorama
-            const streetViewImage = `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${location.lat()},${location.lng()}&fov=90&heading=270&pitch=0&key=AIzaSyCUcYsGhKFTDsYu64sb4P4JOOCoxEbHhy4`;
+            const streetViewImage = `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${location.lat()},${location.lng()}&fov=90&heading=270&pitch=0&key=${config.googleMapsApiKey}`;
             
             // Update the editor with the street view image
             const editorContainer = document.getElementById('editor-container');
