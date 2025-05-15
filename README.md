@@ -164,6 +164,20 @@ co-design-canvas/
 └── submissions.csv      # Local storage for submissions
 ```
 
+## Image Assets
+
+The project includes placeholder images in the `assets/images` directory. You should replace these with your own images:
+
+- `starting1.jpeg` - Replace with your first starting image
+- `starting2.jpeg` - Replace with your second starting image
+- `starting3.jpeg` - Replace with your third starting image
+- `starting4.jpeg` - Replace with your fourth starting image
+
+These images are used as starting points for the design process. Make sure your replacement images are:
+- In JPEG format
+- Of reasonable size (recommended max 2MB per image)
+- Suitable for architectural/urban design purposes
+
 ## Configuration
 
 ### Google Maps API Settings
